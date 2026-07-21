@@ -1,4 +1,4 @@
-"""Local validation script for E-Discovery Review Assistant."""
+"""Local validation script for OmniDrive v. Ventura Motors case study."""
 
 import asyncio
 import logging
@@ -23,18 +23,18 @@ logging.basicConfig(level=logging.INFO, stream=sys.stdout,
                     format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Sample files mapping (filename, type, custodian)
+# New case study files mapping (filename, type, custodian)
 SAMPLE_FILES = [
-    ("doc1_hot_slack_logs.txt", "chat_log", "Elena Rostova"),
-    ("doc2_privileged_lease.eml", "email", "Sarah Jenkins"),
-    ("doc3_mixed_liability_chain.eml", "email", "David Vance"),
-    ("doc4_collusion_pricing.eml", "email", "David Vance"),
-    ("doc5_hr_noise_picnic.eml", "email", "HR"),
+    ("doc1_resignation_slack.txt", "chat_log", "Elena Rostova"),
+    ("doc2_competitor_offer.eml", "email", "Arthur Vance"),
+    ("doc3_privileged_investigation.eml", "email", "Sarah Jenkins"),
+    ("doc4_supplier_leak.eml", "email", "Elena Rostova"),
+    ("doc5_exit_survey_noise.eml", "email", "HR"),
 ]
 
 async def ingest_data(memory_service: HybridMemoryBankService, app_name: str, user_id: str):
-    logger.info("Starting ingestion of sample data...")
-    sample_data_dir = "sample_data"
+    logger.info("Starting ingestion of OmniDrive case study data...")
+    sample_data_dir = "sample_data/omnidrive_ip_theft"
     
     for filename, file_type, custodian in SAMPLE_FILES:
         filepath = os.path.join(sample_data_dir, filename)
@@ -99,21 +99,19 @@ async def run_scenario(runner: Runner, user_id: str, session_id: str, scenario_n
     
     full_response = ""
     async for event in events:
-        # Check if event has content (response from model)
         if hasattr(event, "content") and event.content and event.content.parts:
             for part in event.content.parts:
                 if hasattr(part, "text") and part.text:
                     print(part.text, end="", flush=True)
                     full_response += part.text
-        # Or if it is a tool call/response we might want to log it if debug is enabled
         elif hasattr(event, "actions") and event.actions:
-             pass # can log actions here if needed
+             pass
              
     print("\n--------------------------------------------------")
     return full_response
 
 async def main():
-    app_name = "ediscovery_review_app"
+    app_name = "omnidrive_review_app"
     user_id = "attorney_user"
     
     # 1. Initialize services
@@ -130,10 +128,10 @@ async def main():
     try:
         import asyncpg
         conn = await asyncpg.connect(**db_config)
-        await conn.execute("DROP TABLE IF EXISTS document_chunks;")
+        await conn.execute("DELETE FROM document_chunks WHERE app_name = $1;", app_name)
         await conn.close()
     except Exception as e:
-        logger.warning(f"Failed to drop old validation table: {e}")
+        logger.warning(f"Failed to clear old validation table: {e}")
                
     memory_service = HybridMemoryBankService(
         db_config=db_config,
@@ -155,51 +153,50 @@ async def main():
         auto_create_session=True
     )
     
-    # 4. Run Scenarios
-    # Scenario 1: Smoking Gun
-    await run_scenario(
-        runner=runner,
-        user_id=user_id,
-        session_id="session_scenario_1",
-        scenario_name="Scenario 1: The 'Smoking Gun' & Metadata Trace",
-        query="Are there any conversations where David Vance told engineering to suppress software updates or bypass alarms?"
-    )
-
+    session_id = "validation-session-omnidrive"
     
-    # Scenario 2: Contextual Filter / False Positive
+    # --- Execute Scenarios ---
+    
+    # Scenario 1: Timeline & Resignation
     await run_scenario(
-        runner=runner,
-        user_id=user_id,
-        session_id="session_scenario_2",
-        scenario_name="Scenario 2: Contextual Filter / False Positive",
-        query="Give me all documents mentioning Helios safety baselines and heat issues."
+        runner, user_id, session_id,
+        "Scenario 1: Resignation Timeline & IT Flagged Downloads",
+        "Detail the timeline of events leading to Arthur Vance's resignation and explain what security concerns were flagged by the IT team."
+    )
+    
+    # Scenario 2: Competitor Offer and Intent
+    await run_scenario(
+        runner, user_id, session_id,
+        "Scenario 2: Competitor Recruitment & Tech Benchmarks Discussions",
+        "Did Arthur Vance receive an employment offer from Ventura Motors? What proprietary hardware tech or benchmarks did they discuss?"
+    )
+    
+    # Scenario 3: Privilege Auditing & Work Product Rules
+    await run_scenario(
+        runner, user_id, session_id,
+        "Scenario 3: Legal Privilege & Investigation Directive Auditing",
+        "Review all files for attorney-client privilege. Identify any correspondence where legal counsel is involved, legal advice is discussed, or litigation strategies are formulated."
+    )
+    
+    # Scenario 4: The Misappropriation Smoking Gun
+    await run_scenario(
+        runner, user_id, session_id,
+        "Scenario 4: Misappropriation Proof (Supplier Leak)",
+        "Is there any direct evidence that Ventura Motors has already misappropriated and integrated OmniDrive's proprietary designs?"
+    )
+    
+    # Scenario 5: Offboarding Logistics & Noise Filtering
+    await run_scenario(
+        runner, user_id, session_id,
+        "Scenario 5: HR Offboarding Logistics (Noise Verification)",
+        "What standard exit logistics and forms is Arthur Vance instructed to complete according to the HR department?"
     )
 
-    # Scenario 3: Cross-Custodian Cross-Reference Test
+    # Scenario 6: Full Case Summary & Timeline Cross-Referencing (All Files Included)
     await run_scenario(
-        runner=runner,
-        user_id=user_id,
-        session_id="session_scenario_3",
-        scenario_name="Scenario 3: Cross-Custodian / Multi-Document Citation",
-        query="Detail the issues reported regarding the Helios firmware v4.2 deployment at Oakridge. Who reported them, what were the engineering details, and how did David Vance instruct team members to handle the situation?"
-    )
-
-    # Scenario 4: Privilege Auditing / Legal Advice Detection
-    await run_scenario(
-        runner=runner,
-        user_id=user_id,
-        session_id="session_scenario_4",
-        scenario_name="Scenario 4: Attorney-Client Privilege Auditing & Legal Advice Detection",
-        query="Review all ingested files. Are there any documents where legal counsel is involved, legal advice is discussed, or litigation risks are analyzed? Please list them and identify if they contain potentially privileged communications."
-    )
-
-    # Scenario 5: Irrelevant Noise Filter Test
-    await run_scenario(
-        runner=runner,
-        user_id=user_id,
-        session_id="session_scenario_5",
-        scenario_name="Scenario 5: Irrelevant Noise Filtering & Irrelevant Footnote Validation",
-        query="Where will the NexaGrid annual summer picnic be held, and what mandatory briefing will take place?"
+        runner, user_id, session_id,
+        "Scenario 6: Comprehensive Case Timeline & Evidence Synthesis (All Files)",
+        "Provide a comprehensive case summary and timeline of the trade secret investigation regarding Dr. Arthur Vance, OmniDrive, and Ventura Motors. Who are the actors, what actions did they take, what evidence of theft exists, and how is the legal department handling the response?"
     )
 
 if __name__ == "__main__":

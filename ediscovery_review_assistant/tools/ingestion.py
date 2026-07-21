@@ -2,13 +2,12 @@
 
 import re
 import logging
+import io
 from typing import List, Optional
+import pypdf
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
-
-# List of attorney domains to trigger privilege heuristic
-ATTORNEY_DOMAINS = ["vancelaw.com"]
 
 class EDiscoveryMetadata(BaseModel):
     """Strict tracking schema for E-Discovery documents."""
@@ -25,32 +24,30 @@ class EDiscoveryMetadata(BaseModel):
     # Chunk Positioning
     page_number: Optional[int] = Field(None, description="The specific page number if applicable (e.g., for PDFs).")
     line_range: Optional[str] = Field(None, description="Line range inside raw log or message string (e.g., 'Lines 40-80').")
-    
-    # Privilege Flag
-    heuristic_privilege_flag: bool = Field(default=False, description="True if the chunk involves an attorney domain.")
 
 class MemoryPayload(BaseModel):
     """The final structural payload format written into the Memory Bank index."""
     text_to_embed: str = Field(description="The raw, un-summarized textual content chunk to preserve evidence.")
     metadata: EDiscoveryMetadata
 
-def chunk_text(text: str, max_words: int = 400) -> List[str]:
+def extract_text_from_pdf(pdf_bytes: bytes) -> str:
+    """Extracts text from native PDF bytes, preserving page breaks with form feeds (\f)."""
+    try:
+        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+        pages_text = []
+        for page in reader.pages:
+            text = page.extract_text() or ""
+            pages_text.append(text)
+        # Join pages with form-feed character to allow page-based chunking in parser
+        return "\f".join(pages_text)
+    except Exception as e:
+        logger.error(f"Failed to extract text from PDF: {e}")
+        raise ValueError(f"Invalid or corrupted PDF file: {e}")
+
+def chunk_text(text: str, max_words: int = 200) -> List[str]:
     """Slices a long string into manageable semantic pieces without breaking sentences."""
     words = text.split()
     return [" ".join(words[i:i + max_words]) for i in range(0, len(words), max_words)]
-
-def check_privilege(participants: List[str]) -> bool:
-    """Checks if any participant email contains an attorney domain."""
-    for p in participants:
-        # Extract email from format "Name <email>" or just "email"
-        email_match = re.search(r"<([^>]+)>", p)
-        email = email_match.group(1) if email_match else p
-        email = email.strip().lower()
-        
-        for domain in ATTORNEY_DOMAINS:
-            if email.endswith(f"@{domain}") or email.endswith(f".{domain}"): # handle subdomains if any
-                return True
-    return False
 
 def parse_document(
     file_content: str,
@@ -60,7 +57,7 @@ def parse_document(
     file_path: str
 ) -> List[dict]:
     """Parses structural communications text (Emails, Chat logs, PDFs in text format),
-    chunks the data safely, applies privilege heuristics, and attaches structured metadata.
+    chunks the data safely, and attaches structured metadata.
     
     Args:
         file_content: The raw text content of the file.
@@ -88,19 +85,6 @@ def parse_document(
         recipients_to = [r.strip() for r in to_match.group(1).split(",")] if to_match else []
         recipients_cc = [r.strip() for r in cc_match.group(1).split(",")] if cc_match else []
         
-        # Determine privilege
-        all_participants = [sender] + recipients_to + recipients_cc
-        is_privileged = check_privilege(all_participants)
-        
-        # Also check body for forwarded messages that might contain privileged info
-        # e.g. "---------- Forwarded Message ----------\nFrom: Marcus Vance <m.vance@vancelaw.com>"
-        fwd_sender_match = re.search(r"Forwarded Message.*?\nFrom:\s*(.*)", file_content, re.IGNORECASE | re.DOTALL)
-        if fwd_sender_match:
-            fwd_sender = fwd_sender_match.group(1).split("\n")[0].strip()
-            if check_privilege([fwd_sender]):
-                is_privileged = True
-                logger.info(f"Privilege detected in forwarded sender: {fwd_sender}")
-
         chunks = chunk_text(file_content)
         for idx, chunk in enumerate(chunks):
             meta = EDiscoveryMetadata(
@@ -111,15 +95,14 @@ def parse_document(
                 sender=sender,
                 recipients_to=recipients_to,
                 recipients_cc=recipients_cc,
-                line_range=f"Chunk-{idx+1}",
-                heuristic_privilege_flag=is_privileged
+                line_range=f"Chunk-{idx+1}"
             )
             payload_items.append({"text_to_embed": chunk, "metadata": meta.model_dump()})
 
     # --- TYPE 2: CHAT LOGS PROCESSING ---
     elif file_type == "chat_log":
         lines = file_content.splitlines()
-        chunk_size = 50
+        chunk_size = 15
         for i in range(0, len(lines), chunk_size):
             segment_lines = lines[i:i + chunk_size]
             segment_text = "\n".join(segment_lines)
@@ -129,10 +112,6 @@ def parse_document(
             speakers = re.findall(r"^\[.*?\]\s*([^:]+):", segment_text, re.MULTILINE)
             primary_sender = speakers[0] if speakers else "System/Channel"
             
-            # For privilege check, we collect all unique speakers in this block
-            unique_speakers = list(set(speakers))
-            is_privileged = check_privilege(unique_speakers)
-            
             meta = EDiscoveryMetadata(
                 custodian=custodian,
                 file_type="chat_log",
@@ -141,8 +120,7 @@ def parse_document(
                 sender=primary_sender,
                 recipients_to=[file_name.replace(".txt", "")],
                 recipients_cc=[],
-                line_range=f"Lines {i+1}-{i+len(segment_lines)}",
-                heuristic_privilege_flag=is_privileged
+                line_range=f"Lines {i+1}-{i+len(segment_lines)}"
             )
             payload_items.append({"text_to_embed": segment_text, "metadata": meta.model_dump()})
 
@@ -151,19 +129,11 @@ def parse_document(
         # Standard textualized PDFs separate pages via form feed characters ('\f')
         pages = file_content.split('\f') if '\f' in file_content else [file_content]
         
-        # Default privilege check for document content (might contain names/emails)
-        # We can scan the entire document for attorney domains
-        is_privileged = False
-        for domain in ATTORNEY_DOMAINS:
-            if domain in file_content.lower():
-                is_privileged = True
-                break
-        
         for page_idx, page_text in enumerate(pages):
             if not page_text.strip():
                 continue
             
-            sub_chunks = chunk_text(page_text, max_words=400)
+            sub_chunks = chunk_text(page_text, max_words=200)
             for sub_idx, chunk in enumerate(sub_chunks):
                 meta = EDiscoveryMetadata(
                     custodian=custodian,
@@ -174,8 +144,7 @@ def parse_document(
                     recipients_to=[],
                     recipients_cc=[],
                     page_number=page_idx + 1,
-                    line_range=f"Subchunk-{sub_idx+1}",
-                    heuristic_privilege_flag=is_privileged
+                    line_range=f"Subchunk-{sub_idx+1}"
                 )
                 payload_items.append({"text_to_embed": chunk, "metadata": meta.model_dump()})
 

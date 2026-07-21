@@ -1,0 +1,12 @@
+[2026-06-01 09:00:12] Elena Rostova: Arthur, do you have a few minutes to sync today? We need to review the roadmap for the next-gen Helios LiDAR sensor.
+[2026-06-01 09:02:45] Arthur Vance: Hey Elena. Actually, I was just about to schedule a meeting with you. I'm submitting my resignation today. My last day will be June 15th.
+[2026-06-01 09:03:30] Elena Rostova: Wow, that's sudden! I'm sorry to hear that. Can I ask where you're heading?
+[2026-06-01 09:04:15] Arthur Vance: Just taking some time off for now. Might do some independent consulting, but mostly want to recharge. It's been a busy couple of years.
+[2026-06-01 09:05:01] Elena Rostova: Understood. Let's make sure we schedule a transition plan for all your design files and schematics.
+[2026-06-01 09:05:40] Arthur Vance: Sure, I'll organize my Google Drive and git branches before I log off.
+[2026-06-01 14:15:22] David Miller (IT Security): Elena, do you have a second? We just flagged some unusual repository activity on Arthur Vance's account.
+[2026-06-01 14:16:05] Elena Rostova: What kind of activity, David?
+[2026-06-01 14:17:12] David Miller (IT Security): Last night, between 11 PM and 2 AM, Arthur's account performed a bulk clone and recursive zip download of the entire 'helios-sensor-hardware' repository, including the raw circuit board CAD files and optical alignment formulas.
+[2026-06-01 14:17:55] Elena Rostova: That's almost 10 GB of data. Does he have a business reason to pull all that locally?
+[2026-06-01 14:18:40] David Miller (IT Security): Not typically for his day-to-day work, especially since his desktop has access to the dev-servers directly. And considering he resigned this morning, this is a major security red flag. I've locked his git access for now.
+[2026-06-01 14:19:30] Elena Rostova: Thanks David. Please hold all logs. I'm going to flag this to Sarah Jenkins in Legal immediately.

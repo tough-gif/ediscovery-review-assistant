@@ -20,6 +20,15 @@ class AgentConfig:
     use_vertexai: bool = os.getenv("GOOGLE_GENAI_USE_VERTEXAI") == "1"
     project_id: str = os.getenv("GOOGLE_CLOUD_PROJECT", "")
     location: str = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+    agent_engine_id: str = os.getenv("VERTEX_AGENT_ENGINE_ID", "")
+    gcs_bucket: str = os.getenv("GOOGLE_CLOUD_STORAGE_BUCKET", "")
+    
+    # Cloud SQL PostgreSQL database configurations
+    db_user: str = os.getenv("DB_USER", "app_user")
+    db_password: str = os.getenv("DB_PASSWORD", "ediscovery_pass_123")
+    db_name: str = os.getenv("DB_NAME", "ediscovery")
+    db_host: str = os.getenv("DB_HOST", "127.0.0.1")
+    db_port: str = os.getenv("DB_PORT", "5432")
     
     # Gemini Model Config
     model_name: str = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash")

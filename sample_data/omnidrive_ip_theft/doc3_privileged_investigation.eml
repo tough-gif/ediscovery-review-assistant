@@ -1,0 +1,50 @@
+From: "Sarah Jenkins" <s.jenkins@omnidrive.com>
+To: "Marcus Vance" <m.vance@vancelaw.com>
+Date: Mon, 1 Jun 2026 15:45:10 -0700
+Subject: UGENT: Trade Secret Concerns & Departure of Dr. Arthur Vance
+Thread-Topic: Trade Secret Concerns & Departure of Dr. Arthur Vance
+Thread-Index: AQH178aZ9s8d9f0s
+Importance: High
+
+Marcus,
+
+I need your urgent legal counsel. 
+
+Dr. Arthur Vance, our Chief Hardware Architect, submitted his resignation this morning. Immediately following his announcement, our IT Security team alerted us that Arthur's account performed a bulk download of the entire 'helios-sensor-hardware' repository last night. This repo contains all of our proprietary LiDAR circuit layouts, schematics, and optical alignment equations—the core intellectual property of our autonomous program.
+
+We have reason to suspect he is joining Ventura Motors, as we've heard rumors that Ventura is acquiring a shell consulting entity he registered. 
+
+Please review the attached log summary and advise on our litigation strategy. We want to prepare a lawsuit for trade secret misappropriation and file for a temporary restraining order (TRO) to prevent him from sharing our code.
+
+Regards,
+
+Sarah Jenkins
+General Counsel, OmniDrive LLC
+
+---
+
+From: "Marcus Vance" <m.vance@vancelaw.com>
+To: "Sarah Jenkins" <s.jenkins@omnidrive.com>
+Date: Mon, 1 Jun 2026 16:30:22 -0700
+Subject: Re: URGENT: Trade Secret Concerns & Departure of Dr. Arthur Vance
+Precedence: bulk
+
+Dear Sarah,
+
+I have reviewed your email and the preliminary download logs. This is a matter of severe concern, and we must proceed with caution to protect OmniDrive's rights while preserving our legal position.
+
+My strict legal advice is as follows:
+1. Do not communicate further with Dr. Vance regarding the downloads or suspected competitor plans. Any such communications must be routed through my office.
+2. We must initiate a forensic hold immediately. I am drafting a litigation hold notice for the engineering team.
+3. Crucially, all internal technical audits, log reviews, or forensics regarding Dr. Vance's data access from this point forward must be directed by and routed through my office. This ensures that all subsequent analyses and expert opinions remain protected under the Attorney Work Product doctrine and are not discoverable during litigation.
+4. Do not generate internal memos or spreadsheets comparing Dr. Vance's downloads with our competitor's active projects unless specifically requested by me. Unmanaged internal comparisons can create harmful records if they are later ruled discoverable.
+
+We are preparing the draft complaint for trade secret theft and a motion for a preliminary injunction. I will schedule a call for tomorrow morning at 9 AM to review the draft.
+
+This communication is protected by the Attorney-Client Privilege and contains Attorney Work Product.
+
+Sincerely,
+
+Marcus Vance
+Senior Partner
+Vance & Partners LLP

@@ -15,3 +15,7 @@ wheels/
 # ADK local files
 .adk/
 *.db
+
+# Binaries & Configs
+cloud-sql-proxy
+workspace_config.json
