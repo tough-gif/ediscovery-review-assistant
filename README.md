@@ -189,7 +189,7 @@ The dashboard is structured into two main workspaces:
 1.  **💬 Case Investigation**:
     *   **Document Ingestion (Sidebar)**: Drag and drop files, assign a Custodian, and click `🚀 Process & Ingest`. The app automatically calculates file hashes and skips duplicates.
     *   **Chat Console**: Ask questions about the case files. A circular loader spinner is displayed during evidence retrieval, and answers will contain clickable `[SOURCE: file_name]` tags.
-    *   **Privilege Alerts**: If the system detects privileged material in the retrieved evidence, it will display a red alert: `⚠️ Attorney-Client Privileged / Work Product`.
+    *   **Privilege Auditing**: The assistant automatically detects attorney-client privilege or work product protection when evaluating retrieved evidence, detailing the privilege boundaries and involved counsel directly in its responses.
 
 2.  **📋 Compliance & Audit Trail**:
     *   **Compliance Summary**: High-level counters tracking **Total Files Audited** and **Active Custodians**.
