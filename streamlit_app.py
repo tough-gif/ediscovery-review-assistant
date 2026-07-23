@@ -46,6 +46,10 @@ def load_active_workspace() -> str:
                     return val
         except Exception:
             pass
+    # Fallback to the environment-configured Engine ID if available
+    val = os.getenv("VERTEX_AGENT_ENGINE_ID")
+    if val:
+        return val
     new_id = f"ediscovery_review_app-{uuid.uuid4()}"
     save_active_workspace(new_id)
     return new_id
@@ -199,35 +203,93 @@ def ingest_file(content: str, filename: str, file_type: str, custodian: str, fil
 
 # --- Helper for Async Chat ---
 async def run_chat_async(query: str):
-    runner = Runner(
-        agent=root_agent,
-        app_name=st.session_state.app_name,
-        session_service=st.session_state.session_service,
-        memory_service=st.session_state.memory_service,
-        auto_create_session=True
-    )
+    use_cloud = os.getenv("USE_CLOUD_AGENT", "false").lower() == "true"
     
-    query_content = types.Content(
-        role="user",
-        parts=[types.Part.from_text(text=query)]
-    )
-    
-    events = runner.run_async(
-        user_id="attorney_user",
-        session_id=st.session_state.session_id,
-        new_message=query_content
-    )
-    
-    full_response = ""
-    async for event in events:
-        if hasattr(event, "content") and event.content and event.content.parts:
-            for part in event.content.parts:
-                if hasattr(part, "text") and part.text:
-                    yield part.text
-                    full_response += part.text
-    
-    # Save assistant response to chat history (session state)
-    st.session_state.messages.append({"role": "assistant", "content": full_response})
+    if use_cloud:
+        # Route to Cloud deployed Reasoning Engine
+        from vertexai.preview.reasoning_engines import ReasoningEngine
+        import vertexai
+        
+        # Initialize Vertex AI
+        vertexai.init(project=config.project_id, location=config.location)
+        
+        # Connect to engine
+        engine_resource_name = f"projects/{config.project_id}/locations/{config.location}/reasoningEngines/{config.agent_engine_id}"
+        logger.info(f"Routing chat query to Cloud Agent Engine: {engine_resource_name}")
+        
+        engine = ReasoningEngine(engine_resource_name)
+        
+        # Step 1: Create session in the cloud session service using the Session Service client
+        try:
+            await st.session_state.session_service.create_session(
+                app_name=config.agent_engine_id,
+                user_id="attorney_user",
+                session_id=st.session_state.session_id
+            )
+        except Exception as e:
+            logger.info(f"Cloud session registration notice (likely already exists): {e}")
+            
+        # Step 2: Stream query response from the cloud engine using direct stream request
+        response_stream = engine.execution_api_client.stream_query_reasoning_engine(
+            request={
+                "name": engine.resource_name,
+                "class_method": "stream_query",
+                "input": {
+                    "message": query,
+                    "user_id": "attorney_user",
+                    "session_id": st.session_state.session_id
+                }
+            }
+        )
+        
+        full_response = ""
+        # Parse HttpBody stream chunks
+        for chunk in response_stream:
+            if hasattr(chunk, "data") and chunk.data:
+                try:
+                    event_data = json.loads(chunk.data.decode("utf-8"))
+                    if "content" in event_data:
+                        parts = event_data["content"].get("parts", [])
+                        for part in parts:
+                            text = part.get("text", "")
+                            if text:
+                                yield text
+                                full_response += text
+                except Exception as e:
+                    logger.error(f"Error decoding client event chunk: {e}")
+                            
+        st.session_state.messages.append({"role": "assistant", "content": full_response})
+        
+    else:
+        # Route to local Runner (default)
+        runner = Runner(
+            agent=root_agent,
+            app_name=st.session_state.app_name,
+            session_service=st.session_state.session_service,
+            memory_service=st.session_state.memory_service,
+            auto_create_session=True
+        )
+        
+        query_content = types.Content(
+            role="user",
+            parts=[types.Part.from_text(text=query)]
+        )
+        
+        events = runner.run_async(
+            user_id="attorney_user",
+            session_id=st.session_state.session_id,
+            new_message=query_content
+        )
+        
+        full_response = ""
+        async for event in events:
+            if hasattr(event, "content") and event.content and event.content.parts:
+                for part in event.content.parts:
+                    if hasattr(part, "text") and part.text:
+                        yield part.text
+                        full_response += part.text
+        
+        st.session_state.messages.append({"role": "assistant", "content": full_response})
 
 # --- UI Layout ---
 st.title("⚖️ E-Discovery Document Review Assistant")

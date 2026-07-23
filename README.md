@@ -79,29 +79,39 @@ uv run streamlit run streamlit_app.py --server.port 8501
 
 Open `http://localhost:8501` in your browser.
 
+### Ingestion & Validation Scenarios (Arthur Vance Case Study)
+
+To quickly test the indexing, memory bank integration, and response generation quality, execute the validation runner script:
+
+```bash
+uv run python3 run_validation_omnidrive.py
+```
+
+This script will:
+1. Clear old indexes for a clean run.
+2. Ingest the Arthur Vance case files (`sample_data/omnidrive_ip_theft/`) to GCS and Cloud SQL.
+3. Automatically execute three audit scenarios:
+   - **Timeline & IT Logs**: Recovers the 2026 bulk download timeline.
+   - **Competitor Recruitment**: Recovers details of the Ventura Motors VP offer and proprietary sensor spacing benchmarks.
+   - **Privilege Auditing**: Verifies that emails involving legal counsel (Sarah Jenkins and Marcus Vance) are flagged as attorney-client privileged/work product.
+
+
 ---
 
 ## Deployment to Vertex AI (Backend)
 
-The backend agent package must be built as a wheel file and registered as a Vertex AI Reasoning Engine.
+The backend agent package is automatically packaged as a python wheel and registered as a Vertex AI Reasoning Engine using the deployment wrapper.
 
-### 1. Build the Agent Package
-
-Package the python source codebase:
-
-```bash
-uv build --wheel --out-dir deployment
-```
-
-### 2. Register on Vertex AI
-
-Execute the backend deployment script to push the packaged agent bundles to GCS and register it:
+Execute the unified backend deployment script:
 
 ```bash
 bash ./deployment/deploy_backend.sh
 ```
 
-This will write the new reasoning engine ID to `deployment/new_engine_id.txt` and propagate it to your local config.
+This script will:
+1. Rebuild the latest codebase wheel package (`dist/ediscovery_review_assistant-0.1.0-py3-none-any.whl`).
+2. Upload the staging bundles to GCS and create a new Reasoning Engine instance.
+3. Automatically write the new engine ID to your local `.env` config file (`VERTEX_AGENT_ENGINE_ID`) and propagate it to the frontend setup configs.
 
 ---
 
@@ -128,6 +138,20 @@ Run the frontend deployment helper script:
 ```bash
 bash ./deployment/deploy_frontend.sh
 ```
+
+---
+
+## Offline Evaluation Setup (Vertex AI Console)
+
+Once your agent and Streamlit dashboard are online in the cloud, you can run offline evaluation experiments in the Vertex AI Agent Platform Console:
+
+1. Go to **Agent Platform** > **Deployments** > **E-Discovery Review Assistant Agent**.
+2. Run conversations on your Streamlit UI to generate chat traces/sessions in the cloud.
+3. In the Cloud Console, select **Evaluate** to launch a new offline experiment.
+4. **Choose Evaluation Metrics**:
+   - For **Traces** (Single turns): Select **`Agent Final Response Quality`** (Adaptive Rubric) and **`Agent Hallucination`** (Static Rubric) to measure factual grounding. *Leave "Evaluate intermediate responses" unchecked.*
+   - For **Sessions** (Multi-turn): Select **`Multi-turn Task Success`** (Adaptive Rubric) to evaluate overall query resolution across multiple turns.
+5. Alternatively, you can run evaluations using the pre-configured golden test set located in `sample_data/omnidrive_ip_theft/evaluation_set.jsonl`.
 
 ---
 

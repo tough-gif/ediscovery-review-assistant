@@ -1,0 +1,6 @@
+# Ignore packaging binaries
+*.whl
+*.tar.gz
+
+# Ignore temporary variables
+new_engine_id.txt

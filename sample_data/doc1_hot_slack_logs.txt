@@ -1,6 +1,0 @@
-[2025-03-14 16:22:11] Elena Rostova: @David Vance we have a situation with the v4.2 firmware deployment at the Oakridge municipal site. The battery stacks are spiking past 85C during peak cycling. It looks like the same thermal throttling bug we saw in the lab last November. 
-[2025-03-14 16:23:45] David Vance: Elena, we are 48 hours away from signing the Metropolis contract. Is the system crashing?
-[2025-03-14 16:24:10] Elena Rostova: Not yet, but if it runs at this temp for more than a week, the cells will degrade or worse, trigger a thermal runaway. The software safety cutoff isn't engaging properly because the sensor polling loop is lagging. It's a fundamental flaw in the core architecture of Helios.
-[2025-03-14 16:25:30] David Vance: Do not push any patches or alert the Oakridge field team yet. It will trigger a public disclosure clause. Just let them run it on manual override for now. We will push a "routine optimization" update next month after Metropolis clears.
-[2025-03-14 16:26:02] Elena Rostova: Manual override bypasses the hardware alarms, David. That's incredibly risky.
-[2025-03-14 16:26:40] David Vance: Let me worry about the risk. Just keep this in this channel. Do not put this in the weekly status report.

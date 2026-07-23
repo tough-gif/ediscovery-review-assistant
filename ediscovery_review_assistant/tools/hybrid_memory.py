@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class HybridMemoryBankService(VertexAiMemoryBankService):
     """Memory service that combines Vertex AI Cloud Memory Bank with Cloud SQL PostgreSQL keyword indexing."""
 
-    def __init__(self, db_config: dict, *args, **kwargs):
+    def __init__(self, db_config: Optional[dict] = None, *args, **kwargs):
         """Initializes the service with database configuration connection parameters."""
         super().__init__(*args, **kwargs)
         self.db_config = db_config
@@ -24,11 +24,15 @@ class HybridMemoryBankService(VertexAiMemoryBankService):
 
     async def _ensure_schema(self) -> None:
         """Ensures database tables are initialized once per instance runtime."""
-        if self.schema_initialized:
+        if self.schema_initialized or not self.db_config:
             return
             
         logger.info("Verifying Cloud SQL PostgreSQL database schema...")
-        conn = await asyncpg.connect(**self.db_config)
+        try:
+            conn = await asyncpg.connect(**self.db_config)
+        except Exception as e:
+            logger.warning(f"Failed to connect to PostgreSQL during schema verify, disabling keyword FTS schema setup: {e}")
+            return
         try:
             # 1. Create document chunks table with JSONB and tsvector support
             await conn.execute("""
@@ -207,8 +211,15 @@ class HybridMemoryBankService(VertexAiMemoryBankService):
         if not clean_query:
             return memories
             
-        await self._ensure_schema()
-        conn = await asyncpg.connect(**self.db_config)
+        if not self.db_config:
+            return memories
+            
+        try:
+            await self._ensure_schema()
+            conn = await asyncpg.connect(**self.db_config)
+        except Exception as e:
+            logger.warning(f"PostgreSQL database connection failed in keyword search: {e}")
+            return memories
         try:
             rows = await conn.fetch("""
                 SELECT chunk_id, content, metadata_json 

@@ -12,7 +12,7 @@ COPY . /app
 RUN pip install --no-cache-dir uv
 
 # Build and install the local package and its dependencies in the system environment
-RUN uv pip install --system --no-cache .
+RUN uv pip install --system --no-cache --prerelease=allow .
 
 # Expose Streamlit's default port
 EXPOSE 8080

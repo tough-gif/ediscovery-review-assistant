@@ -5,7 +5,7 @@ import logging
 import os
 import sys
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(dotenv_path=os.path.join(os.getcwd(), ".env"), override=True)
 
 from google.genai import types
 from google.adk import Runner
@@ -111,7 +111,7 @@ async def run_scenario(runner: Runner, user_id: str, session_id: str, scenario_n
     return full_response
 
 async def main():
-    app_name = "omnidrive_review_app"
+    app_name = config.agent_engine_id
     user_id = "attorney_user"
     
     # 1. Initialize services

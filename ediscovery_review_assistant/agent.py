@@ -52,13 +52,26 @@ class CustomPreloadMemoryTool(BaseTool):
         if not memory_blocks:
             return
 
+        if not llm_request.contents:
+            return
+        
+        last_msg = llm_request.contents[-1]
+        if last_msg.role != "user":
+            return
+            
         full_memory_text = "\n".join(memory_blocks)
-        si = f"""The following text chunks are retrieved from the Case Review files. Use them to answer the query:
+        context_block = f"""
+
+[RECONSTRUCTED GROUNDING CONTEXT]
+The following text chunks are retrieved from the Case Review files. Use them to answer the query:
 <RETRIEVED_CASE_DOCUMENTS>
 {full_memory_text}
 </RETRIEVED_CASE_DOCUMENTS>
 """
-        llm_request.append_instructions([si])
+        for part in last_msg.parts:
+            if part.text:
+                part.text += context_block
+                break
 
 custom_preload_tool = CustomPreloadMemoryTool()
 
