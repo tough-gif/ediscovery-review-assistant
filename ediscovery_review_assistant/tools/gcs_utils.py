@@ -74,7 +74,7 @@ def write_ingestion_manifest(filename: str, custodian: str, file_hash: str, stat
     except Exception as e:
         logger.error(f"Failed to write updated manifest to GCS: {e}")
 
-def write_chat_audit_log(session_id: str, query: str, response: str, files_cited: list):
+def write_chat_audit_log(session_id: str, query: str, response: str, files_cited: list, user_id: str = "attorney_user"):
     """Appends a reviewer query event to the centralized chat history log in GCS."""
     if not config.gcs_bucket:
         return
@@ -97,7 +97,7 @@ def write_chat_audit_log(session_id: str, query: str, response: str, files_cited
     entry = {
         "timestamp": datetime.utcnow().isoformat(),
         "session_id": session_id,
-        "reviewer_id": "attorney_user",
+        "reviewer_id": user_id,
         "query": query,
         "response": response,
         "files_cited": files_cited
@@ -112,7 +112,7 @@ def write_chat_audit_log(session_id: str, query: str, response: str, files_cited
     except Exception as e:
         logger.error(f"Failed to write updated chat history to GCS: {e}")
 
-def write_system_audit_log(action: str, details: str):
+def write_system_audit_log(action: str, details: str, user_id: str = "attorney_user"):
     """Appends a system action (like RESET) to the centralized system events log in GCS."""
     if not config.gcs_bucket:
         return
@@ -135,7 +135,7 @@ def write_system_audit_log(action: str, details: str):
     entry = {
         "timestamp": datetime.utcnow().isoformat(),
         "action": action,
-        "user_id": "attorney_user",
+        "user_id": user_id,
         "details": details
     }
     events.append(entry)

@@ -23,6 +23,11 @@ class AgentConfig:
     agent_engine_id: str = os.getenv("VERTEX_AGENT_ENGINE_ID", "")
     gcs_bucket: str = os.getenv("GOOGLE_CLOUD_STORAGE_BUCKET", "")
     
+    # Model Armor configuration (Phase 1 Governance)
+    model_armor_project_id: str = os.getenv("MODEL_ARMOR_PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT", "")
+    model_armor_location: str = os.getenv("MODEL_ARMOR_LOCATION", "us-central1")
+    model_armor_template_id: str = os.getenv("MODEL_ARMOR_TEMPLATE_ID", "")
+    
     # Cloud SQL PostgreSQL database configurations
     db_user: str = os.getenv("DB_USER", "app_user")
     db_password: str = os.getenv("DB_PASSWORD", "ediscovery_pass_123")

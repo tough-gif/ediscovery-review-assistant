@@ -15,6 +15,7 @@ from google.adk.sessions.vertex_ai_session_service import VertexAiSessionService
 from ediscovery_review_assistant.config import config
 from ediscovery_review_assistant.tools.hybrid_memory import HybridMemoryBankService
 from ediscovery_review_assistant.tools.gcs_utils import upload_to_gcs, write_ingestion_manifest, write_chat_audit_log, write_system_audit_log
+from ediscovery_review_assistant.tools.model_armor import ModelArmorGuard
 import hashlib
 import uuid
 import asyncpg
@@ -62,6 +63,19 @@ def save_active_workspace(workspace_id: str):
     except Exception as e:
         logging.error(f"Failed to write workspace config: {e}")
 
+def get_user_email() -> str:
+    """Extracts the authenticated user email from IAP headers, failing back to 'attorney_user' locally."""
+    try:
+        headers = st.context.headers
+        raw_email = headers.get("X-Goog-Authenticated-User-Email") or headers.get("x-goog-authenticated-user-email")
+        if raw_email:
+            if ":" in raw_email:
+                return raw_email.split(":")[-1]
+            return raw_email
+    except Exception as e:
+        logger.debug(f"IAP Context header parsing bypassed or unavailable: {e}")
+    return "attorney_user"
+
 # We need to make sure our package is in the path if running streamlit directly
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
@@ -107,6 +121,8 @@ if "session_id" not in st.session_state:
     st.session_state.session_id = f"streamlit-session-{uuid.uuid4()}"
 if "app_name" not in st.session_state:
     st.session_state.app_name = load_active_workspace()
+if "model_armor" not in st.session_state:
+    st.session_state.model_armor = ModelArmorGuard()
 
 def render_ingestion_flow(placeholder, file_states):
     svg_spinner = (
@@ -186,7 +202,7 @@ async def ingest_file_async(content: str, filename: str, file_type: str, custodi
     if memories:
         await st.session_state.memory_service.add_memory(
             app_name=st.session_state.app_name,
-            user_id="attorney_user",
+            user_id=get_user_email(),
             memories=memories
         )
     return len(memories)
@@ -223,7 +239,7 @@ async def run_chat_async(query: str):
         try:
             await st.session_state.session_service.create_session(
                 app_name=config.agent_engine_id,
-                user_id="attorney_user",
+                user_id=get_user_email(),
                 session_id=st.session_state.session_id
             )
         except Exception as e:
@@ -236,7 +252,7 @@ async def run_chat_async(query: str):
                 "class_method": "stream_query",
                 "input": {
                     "message": query,
-                    "user_id": "attorney_user",
+                    "user_id": get_user_email(),
                     "session_id": st.session_state.session_id
                 }
             }
@@ -276,7 +292,7 @@ async def run_chat_async(query: str):
         )
         
         events = runner.run_async(
-            user_id="attorney_user",
+            user_id=get_user_email(),
             session_id=st.session_state.session_id,
             new_message=query_content
         )
@@ -414,7 +430,7 @@ with st.sidebar:
                             loop.run_until_complete(
                                 st.session_state.memory_service.add_memory(
                                     app_name=st.session_state.app_name,
-                                    user_id="attorney_user",
+                                    user_id=get_user_email(),
                                     memories=memories
                                 )
                             )
@@ -468,11 +484,26 @@ with tab_chat:
     
     # Accept user input
     if prompt := st.chat_input("Ask a question about the case documents..."):
+        # Check prompt with Model Armor before invoking agent
+        is_blocked, prompt_processed = st.session_state.model_armor.scan_prompt(prompt)
+        
         # Display user message in chat message container
         with st.chat_message("user"):
             st.markdown(prompt)
-        # Add user message to chat history
         st.session_state.messages.append({"role": "user", "content": prompt})
+        
+        if is_blocked:
+            with st.chat_message("assistant"):
+                st.markdown(prompt_processed)
+            st.session_state.messages.append({"role": "assistant", "content": prompt_processed})
+            write_chat_audit_log(
+                session_id=st.session_state.session_id,
+                query=prompt,
+                response=prompt_processed,
+                files_cited=[],
+                user_id=get_user_email()
+            )
+            st.rerun()
     
         # Display assistant response in chat message container
         with st.chat_message("assistant"):
@@ -495,17 +526,24 @@ with tab_chat:
                 
                 full_response = ""
                 first_chunk = True
-                async for text in run_chat_async(prompt):
+                async for text in run_chat_async(prompt_processed):
                     if first_chunk:
                         response_placeholder.empty()
                         first_chunk = False
                     full_response += text
-                    # We can't easily update the warning style dynamically during streaming in a clean way,
-                    # so we stream as markdown, and then if it has privilege, we can render it as warning at the end.
+                    # We stream as markdown
                     response_placeholder.markdown(full_response + "▌")
                 
                 # Final render
                 response_placeholder.markdown(full_response)
+                
+                # Scan response with Model Armor
+                is_resp_blocked, response_processed = st.session_state.model_armor.scan_response(full_response)
+                if is_resp_blocked:
+                    response_placeholder.markdown(response_processed)
+                    full_response = response_processed
+                    if st.session_state.messages and st.session_state.messages[-1]["role"] == "assistant":
+                        st.session_state.messages[-1]["content"] = response_processed
                 
                 # Log chat query audit entry
                 files_cited = [f for f in st.session_state.ingested_files.keys() if f.lower() in full_response.lower() or f.lower() in prompt.lower()]
@@ -513,7 +551,8 @@ with tab_chat:
                     session_id=st.session_state.session_id,
                     query=prompt,
                     response=full_response,
-                    files_cited=files_cited
+                    files_cited=files_cited,
+                    user_id=get_user_email()
                 )
     
             loop = asyncio.new_event_loop()
