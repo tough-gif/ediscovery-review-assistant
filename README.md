@@ -61,6 +61,11 @@ DB_PASSWORD=ediscovery_pass_123
 DB_NAME=ediscovery
 DB_HOST=127.0.0.1
 DB_PORT=5433
+
+# Model Armor settings (Optional, safety bypasses if empty)
+MODEL_ARMOR_PROJECT_ID=your-gcp-project-id
+MODEL_ARMOR_LOCATION=us-central1
+MODEL_ARMOR_TEMPLATE_ID=your-model-armor-template-id
 ```
 
 ---
@@ -138,6 +143,25 @@ Run the frontend deployment helper script:
 ```bash
 bash ./deployment/deploy_frontend.sh
 ```
+
+---
+
+## Security, Governance & Audit Trails (Model Armor & IAP)
+
+The E-Discovery application implements enterprise-level governance boundaries to protect evidence datasets and ensure compliance trail accountability:
+
+### 1. Model Armor Safety Gating
+*   **Prompt Ingress & Egress Filtering**: Incoming queries are scanned for jailbreak attempts, prompt injections, and sensitive PII leaks *before* reaching the Vertex AI LLM. LLM responses are sanitized for sensitive data leaks before rendering.
+*   **Safety Template Setup**: 
+    1.  Create a Model Armor template in the GCP Console under **Security** > **Model Armor** (Location: `us-central1`).
+    2.  Provide the template ID in your `.env` (or during Cloud Run setup).
+    3.  Ensure the Cloud Run service account (`PROJECT_NUMBER-compute@developer.gserviceaccount.com`) is granted the **`Model Armor User`** (`roles/modelarmor.user`) role to call the template API.
+
+### 2. User Context & IAP Identity Propagation
+*   **Verified Reviewer Identity**: Instead of hardcoding static credentials, the app extracts the dynamic user email from the HTTP headers (`X-Goog-Authenticated-User-Email`) injected by **Google Cloud Identity-Aware Proxy (IAP)**.
+*   **Enforcing IAP Access**:
+    1.  Under your Cloud Run service **Security** tab, select **Require authentication** and enable **Identity Aware Proxy (IAP)**.
+    2.  Grant the role **`IAP-secured Web App User`** (`roles/iap.httpsResourceAccessor`) to your organization's allowed reviewer list or domain in GCP IAM.
 
 ---
 
