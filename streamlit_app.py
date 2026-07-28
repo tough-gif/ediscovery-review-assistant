@@ -15,11 +15,13 @@ from google.adk.sessions.vertex_ai_session_service import VertexAiSessionService
 from ediscovery_review_assistant.config import config
 from ediscovery_review_assistant.tools.hybrid_memory import HybridMemoryBankService
 from ediscovery_review_assistant.tools.gcs_utils import upload_to_gcs, write_ingestion_manifest, write_chat_audit_log, write_system_audit_log
-from ediscovery_review_assistant.tools.model_armor import ModelArmorGuard
 import hashlib
 import uuid
 import asyncpg
 import json
+import httpx
+import google.auth
+import google.auth.transport.requests
 
 def download_gcs_json(blob_name: str) -> list:
     """Downloads and parses a JSON log from GCS, returning an empty list if not found."""
@@ -121,8 +123,6 @@ if "session_id" not in st.session_state:
     st.session_state.session_id = f"streamlit-session-{uuid.uuid4()}"
 if "app_name" not in st.session_state:
     st.session_state.app_name = load_active_workspace()
-if "model_armor" not in st.session_state:
-    st.session_state.model_armor = ModelArmorGuard()
 
 def render_ingestion_flow(placeholder, file_states):
     svg_spinner = (
@@ -222,58 +222,82 @@ async def run_chat_async(query: str):
     use_cloud = os.getenv("USE_CLOUD_AGENT", "false").lower() == "true"
     
     if use_cloud:
-        # Route to Cloud deployed Reasoning Engine
-        from vertexai.preview.reasoning_engines import ReasoningEngine
-        import vertexai
-        
-        # Initialize Vertex AI
-        vertexai.init(project=config.project_id, location=config.location)
-        
-        # Connect to engine
-        engine_resource_name = f"projects/{config.project_id}/locations/{config.location}/reasoningEngines/{config.agent_engine_id}"
-        logger.info(f"Routing chat query to Cloud Agent Engine: {engine_resource_name}")
-        
-        engine = ReasoningEngine(engine_resource_name)
-        
+        # Get credentials
+        credentials, _ = google.auth.default()
+        auth_req = google.auth.transport.requests.Request()
+        credentials.refresh(auth_req)
+        token = credentials.token
+
+        # Construct endpoints
+        query_url = f"https://{config.location}-aiplatform.googleapis.com/v1/projects/{config.project_id}/locations/{config.location}/reasoningEngines/{config.agent_engine_id}:query"
+        stream_url = f"https://{config.location}-aiplatform.googleapis.com/v1/projects/{config.project_id}/locations/{config.location}/reasoningEngines/{config.agent_engine_id}:streamQuery"
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+
         # Step 1: Create session in the cloud session service using the Session Service client
         try:
-            await st.session_state.session_service.create_session(
-                app_name=config.agent_engine_id,
-                user_id=get_user_email(),
-                session_id=st.session_state.session_id
-            )
-        except Exception as e:
-            logger.info(f"Cloud session registration notice (likely already exists): {e}")
-            
-        # Step 2: Stream query response from the cloud engine using direct stream request
-        response_stream = engine.execution_api_client.stream_query_reasoning_engine(
-            request={
-                "name": engine.resource_name,
-                "class_method": "stream_query",
+            create_body = {
+                "class_method": "create_session",
                 "input": {
-                    "message": query,
                     "user_id": get_user_email(),
                     "session_id": st.session_state.session_id
                 }
             }
-        )
-        
+            res = httpx.post(query_url, headers=headers, json=create_body, timeout=30.0)
+            if res.status_code == 200:
+                logger.info(f"Registered session {st.session_state.session_id} on Cloud Agent.")
+            else:
+                err_msg = res.read().decode('utf-8')
+                if "already exists" in err_msg:
+                    logger.info("Session already exists on Cloud Agent.")
+                else:
+                    logger.warning(f"Session registration notice: {err_msg}")
+        except Exception as e:
+            logger.error(f"Error registering cloud session: {e}")
+
+        # Step 2: Stream query response from the cloud engine using secure v1 REST API
+        body = {
+            "class_method": "stream_query",
+            "input": {
+                "message": query,
+                "user_id": get_user_email(),
+                "session_id": st.session_state.session_id
+            }
+        }
+
         full_response = ""
-        # Parse HttpBody stream chunks
-        for chunk in response_stream:
-            if hasattr(chunk, "data") and chunk.data:
-                try:
-                    event_data = json.loads(chunk.data.decode("utf-8"))
-                    if "content" in event_data:
-                        parts = event_data["content"].get("parts", [])
-                        for part in parts:
-                            text = part.get("text", "")
-                            if text:
-                                yield text
-                                full_response += text
-                except Exception as e:
-                    logger.error(f"Error decoding client event chunk: {e}")
-                            
+        try:
+            with httpx.stream("POST", stream_url, headers=headers, json=body, timeout=30.0) as r:
+                if r.status_code == 403:
+                    security_msg = "Model Armor Security Policy Block: The query or generated response violates content safety guidelines."
+                    yield security_msg
+                    full_response = security_msg
+                elif r.status_code != 200:
+                    error_msg = f"Error executing query (Status {r.status_code}): {r.read().decode('utf-8')}"
+                    yield error_msg
+                    full_response = error_msg
+                else:
+                    for line in r.iter_lines():
+                        if line:
+                            try:
+                                event_data = json.loads(line)
+                                if "content" in event_data:
+                                    parts = event_data["content"].get("parts", [])
+                                    for part in parts:
+                                        text = part.get("text", "")
+                                        if text:
+                                            yield text
+                                            full_response += text
+                            except Exception as e:
+                                logger.error(f"Error parsing line chunk: {e}")
+        except Exception as e:
+            error_msg = f"HTTP request failed: {e}"
+            yield error_msg
+            full_response = error_msg
+
         st.session_state.messages.append({"role": "assistant", "content": full_response})
         
     else:
@@ -484,26 +508,10 @@ with tab_chat:
     
     # Accept user input
     if prompt := st.chat_input("Ask a question about the case documents..."):
-        # Check prompt with Model Armor before invoking agent
-        is_blocked, prompt_processed = st.session_state.model_armor.scan_prompt(prompt)
-        
         # Display user message in chat message container
         with st.chat_message("user"):
             st.markdown(prompt)
         st.session_state.messages.append({"role": "user", "content": prompt})
-        
-        if is_blocked:
-            with st.chat_message("assistant"):
-                st.markdown(prompt_processed)
-            st.session_state.messages.append({"role": "assistant", "content": prompt_processed})
-            write_chat_audit_log(
-                session_id=st.session_state.session_id,
-                query=prompt,
-                response=prompt_processed,
-                files_cited=[],
-                user_id=get_user_email()
-            )
-            st.rerun()
     
         # Display assistant response in chat message container
         with st.chat_message("assistant"):
@@ -526,24 +534,29 @@ with tab_chat:
                 
                 full_response = ""
                 first_chunk = True
-                async for text in run_chat_async(prompt_processed):
-                    if first_chunk:
-                        response_placeholder.empty()
-                        first_chunk = False
-                    full_response += text
-                    # We stream as markdown
-                    response_placeholder.markdown(full_response + "▌")
-                
-                # Final render
-                response_placeholder.markdown(full_response)
-                
-                # Scan response with Model Armor
-                is_resp_blocked, response_processed = st.session_state.model_armor.scan_response(full_response)
-                if is_resp_blocked:
-                    response_placeholder.markdown(response_processed)
-                    full_response = response_processed
-                    if st.session_state.messages and st.session_state.messages[-1]["role"] == "assistant":
-                        st.session_state.messages[-1]["content"] = response_processed
+                try:
+                    async for text in run_chat_async(prompt):
+                        if first_chunk:
+                            response_placeholder.empty()
+                            first_chunk = False
+                        full_response += text
+                        # We stream as markdown
+                        response_placeholder.markdown(full_response + "▌")
+                    
+                    # Final render
+                    response_placeholder.markdown(full_response)
+                except Exception as e:
+                    # Capture HTTP errors from the Agent Gateway if a request was blocked/denied
+                    logger.error(f"Error streaming response from reasoning engine: {e}")
+                    blocked_msg = "Your query was blocked by corporate safety policies (potential injection/jailbreak/PII violation)."
+                    if any(k in str(e).lower() for k in ["blocked", "denied", "forbidden", "403", "422"]):
+                        full_response = blocked_msg
+                    else:
+                        full_response = f"Execution error: {e}"
+                    response_placeholder.markdown(full_response)
+                    
+                    # Save assistant warning message to session state messages list
+                    st.session_state.messages.append({"role": "assistant", "content": full_response})
                 
                 # Log chat query audit entry
                 files_cited = [f for f in st.session_state.ingested_files.keys() if f.lower() in full_response.lower() or f.lower() in prompt.lower()]

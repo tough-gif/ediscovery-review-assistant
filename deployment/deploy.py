@@ -25,7 +25,7 @@ from google.cloud import storage
 
 # Import the root_agent from your current project
 from ediscovery_review_assistant.agent import root_agent
-from vertexai import agent_engines
+from vertexai import Client
 from vertexai.preview.reasoning_engines import AdkApp
 
 FLAGS = flags.FLAGS
@@ -40,6 +40,7 @@ flags.DEFINE_string(
 flags.DEFINE_bool("create", False, "Create a new agent.")
 flags.DEFINE_bool("delete", False, "Delete an existing agent.")
 flags.mark_bool_flags_as_mutual_exclusive(["create", "delete"])
+flags.DEFINE_string("agent_gateway", None, "Optional Agent Gateway name for Client-to-Agent ingress governance.")
 
 # Updated to match your project name. Adjust version if necessary.
 AGENT_WHL_FILE = "dist/ediscovery_review_assistant-0.1.0-py3-none-any.whl"
@@ -93,7 +94,7 @@ def make_memory_service():
     
     project = os.getenv("AIP_PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT")
     location = os.getenv("AIP_LOCATION", "us-central1")
-    engine_id = os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID") or os.getenv("VERTEX_AGENT_ENGINE_ID")
+    engine_id = os.getenv("WORKSPACE_ID") or os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID") or os.getenv("VERTEX_AGENT_ENGINE_ID")
     
     return HybridMemoryBankService(
         db_config=None,
@@ -103,7 +104,12 @@ def make_memory_service():
     )
 
 
-def create(env_vars: dict[str, str]) -> None:
+def create(
+    env_vars: dict[str, str],
+    project_id: str,
+    location: str,
+    staging_bucket_uri: str,
+) -> None:
     """Creates and deploys the agent."""
     adk_app = AdkApp(agent=root_agent, memory_service_builder=make_memory_service)
 
@@ -113,18 +119,35 @@ def create(env_vars: dict[str, str]) -> None:
 
     logger.info("Using agent wheel file: %s", AGENT_WHL_FILE)
 
-    remote_agent = agent_engines.create(
-        adk_app,
-        requirements=[AGENT_WHL_FILE],
-        extra_packages=[AGENT_WHL_FILE],
-        env_vars=env_vars,
-        display_name=FLAGS.display_name,
+    client = Client(project=project_id, location=location)
+
+    config_spec = {
+        "staging_bucket": staging_bucket_uri,
+        "display_name": FLAGS.display_name,
+        "requirements": [AGENT_WHL_FILE],
+        "extra_packages": [AGENT_WHL_FILE],
+        "env_vars": env_vars,
+    }
+
+    if FLAGS.agent_gateway:
+        gateway_path = f"projects/{project_id}/locations/{location}/agentGateways/{FLAGS.agent_gateway}"
+        config_spec["agent_gateway_config"] = {
+            "client_to_agent_config": {
+                "agent_gateway": gateway_path
+            }
+        }
+        config_spec["identity_type"] = "AGENT_IDENTITY"
+        logger.info("Binding Reasoning Engine to Ingress Agent Gateway: %s", gateway_path)
+
+    remote_agent = client.agent_engines.create(
+        agent=adk_app,
+        config=config_spec
     )
-    logger.info("Successfully created agent: %s", remote_agent.resource_name)
+    logger.info("Successfully created agent: %s", remote_agent.api_resource.name)
     
     # Write the engine ID to file for build/deploy pipelines to consume
     try:
-        engine_id = remote_agent.resource_name.split("/")[-1]
+        engine_id = remote_agent.api_resource.name.split("/")[-1]
         with open("deployment/new_engine_id.txt", "w") as f:
             f.write(engine_id)
         logger.info("Saved engine ID to deployment/new_engine_id.txt")
@@ -170,6 +193,7 @@ def collect_env_vars() -> dict[str, str]:
         "EMBEDDING_MODEL_NAME",
         "VECTOR_DIMENSIONS",
         "VERTEX_AGENT_ENGINE_ID",
+        "WORKSPACE_ID",
         "GOOGLE_CLOUD_STORAGE_BUCKET",
         "OTEL_SEMCONV_STABILITY_OPT_IN",
         "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT",
@@ -235,7 +259,7 @@ def main(argv: list[str]) -> None:
         )
 
         if FLAGS.create:
-            create(env_vars)
+            create(env_vars, project_id, location, staging_bucket_uri)
         elif FLAGS.delete:
             delete(FLAGS.resource_id)
 

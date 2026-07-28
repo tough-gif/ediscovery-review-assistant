@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.git/
+.github/
+.ipynb_checkpoints/
+deployment/new_engine_id.txt
+deployment/engine_spec.json
+scratch/
+brain/
+*.log
+*.zip
+*.tar.gz
+cloud-sql-proxy
+cloud-sql-proxy.LATEST

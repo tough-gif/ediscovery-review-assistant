@@ -12,10 +12,11 @@ fi
 TARGET_PROJECT_ID="${1:-$GOOGLE_CLOUD_PROJECT}"
 TARGET_REGION="${2:-${GOOGLE_CLOUD_LOCATION:-us-central1}}"
 DB_PASSWORD="${3:-${DB_PASSWORD:-ediscovery_pass_123}}"
+AGENT_GATEWAY="${4:-${AGENT_GATEWAY:-ediscovery-safety-policy}}"
 
 if [ -z "$TARGET_PROJECT_ID" ]; then
     echo "❌ Error: Please specify the TARGET_PROJECT_ID either as an argument or in .env."
-    echo "Usage: ./deployment/migrate_project.sh <TARGET_PROJECT_ID> [REGION] [DB_PASSWORD]"
+    echo "Usage: ./deployment/migrate_project.sh <TARGET_PROJECT_ID> [REGION] [DB_PASSWORD] [AGENT_GATEWAY]"
     exit 1
 fi
 
@@ -25,6 +26,7 @@ echo "=================================================="
 echo "Target Project ID: ${TARGET_PROJECT_ID}"
 echo "Target Region:     ${TARGET_REGION}"
 echo "Database Password: [SECURE]"
+echo "Agent Gateway:     ${AGENT_GATEWAY}"
 echo "=================================================="
 
 # 1. Enable Required Cloud Services on the Target Project
@@ -107,29 +109,47 @@ echo "✅ IAM Bindings configured."
 
 # 6. Prompt to Enable SQL pgvector extension manually
 echo -e "\n=================================================="
-echo "⚠️  Action Required: Enable pgvector on PostgreSQL"
+echo "⚠️  Action Required: Enable pgvector & Configure Safety"
 echo "=================================================="
-echo "Before deploying the application, you must enable the pgvector"
-echo "extension on your new database."
+echo "Before deploying, please verify these steps on the target project:"
 echo ""
-echo "Easiest Way (via Google Cloud Console Query Studio):"
+echo "Step A: Enable pgvector on PostgreSQL:"
 echo "1. Go to: https://console.cloud.google.com/sql/instances/${INSTANCE_NAME}/studio?project=${TARGET_PROJECT_ID}"
 echo "2. Select database: 'ediscovery' (log in as 'postgres' or 'app_user')"
-echo "3. Paste and run the following SQL command:"
-echo "   CREATE EXTENSION IF NOT EXISTS vector;"
+echo "3. Run: CREATE EXTENSION IF NOT EXISTS vector;"
+echo ""
+if [ -n "${AGENT_GATEWAY}" ]; then
+    echo "Step B: Create Model Armor Template in Target Project:"
+    echo "Run this command in Cloud Shell to register the safety template:"
+    echo "gcloud beta model-armor templates create ${AGENT_GATEWAY} \\"
+    echo "    --location=\"${TARGET_REGION}\" \\"
+    echo "    --project=\"${TARGET_PROJECT_ID}\" \\"
+    echo "    --pii-entities=\"email-address,phone-number,social-security-number\" \\"
+    echo "    --pii-action=\"mask\" \\"
+    echo "    --jailbreak-action=\"block\" \\"
+    echo "    --prompt-injection-action=\"block\""
+    echo ""
+    echo "Step C: Ensure the Agent Gateway '${AGENT_GATEWAY}' is created"
+    echo "in the target project location '${TARGET_REGION}'."
+fi
 echo "=================================================="
-read -p "Press [Enter] once you have enabled pgvector to resume deployment..."
+read -p "Press [Enter] once these actions are complete to resume deployment..."
 
 # 7. Package and Deploy Backend Reasoning Engine
 echo -e "\n⚙️ Step 6: Building and Deploying Vertex AI Reasoning Engine..."
 # Build package wheel offline to bypass registry network authentication checks
 uv build --offline
 
+GATEWAY_FLAG=""
+if [ -n "${AGENT_GATEWAY}" ]; then
+    GATEWAY_FLAG="--agent_gateway ${AGENT_GATEWAY}"
+fi
+
 # Execute Python staging deploy runner in the context of the target project
 GOOGLE_CLOUD_PROJECT="${TARGET_PROJECT_ID}" \
 GOOGLE_CLOUD_STORAGE_BUCKET="${BUCKET_NAME}" \
 GOOGLE_CLOUD_LOCATION="${TARGET_REGION}" \
-uv run python deployment/deploy.py --create
+uv run python deployment/deploy.py --create ${GATEWAY_FLAG}
 
 NEW_ENGINE_ID=$(cat deployment/new_engine_id.txt)
 echo "✅ Reasoning Engine registered. New Engine ID: ${NEW_ENGINE_ID}"
@@ -148,7 +168,7 @@ gcloud run deploy "${SERVICE_NAME}" \
     --region="${TARGET_REGION}" \
     --project="${TARGET_PROJECT_ID}" \
     --add-cloudsql-instances="${TARGET_PROJECT_ID}:${TARGET_REGION}:${INSTANCE_NAME}" \
-    --set-env-vars "VERTEX_AGENT_ENGINE_ID=${NEW_ENGINE_ID},GOOGLE_CLOUD_PROJECT=${TARGET_PROJECT_ID},GOOGLE_CLOUD_LOCATION=${TARGET_REGION},GOOGLE_CLOUD_STORAGE_BUCKET=${BUCKET_NAME},GOOGLE_GENAI_USE_VERTEXAI=1,DB_USER=app_user,DB_PASSWORD=${DB_PASSWORD},DB_NAME=ediscovery,DB_HOST=/cloudsql/${TARGET_PROJECT_ID}:${TARGET_REGION}:${INSTANCE_NAME},DB_PORT=5432,MODEL_ARMOR_PROJECT_ID=${TARGET_PROJECT_ID},MODEL_ARMOR_LOCATION=${TARGET_REGION},MODEL_ARMOR_TEMPLATE_ID=ediscovery-safety-policy" \
+    --set-env-vars "VERTEX_AGENT_ENGINE_ID=${NEW_ENGINE_ID},GOOGLE_CLOUD_PROJECT=${TARGET_PROJECT_ID},GOOGLE_CLOUD_LOCATION=${TARGET_REGION},GOOGLE_CLOUD_STORAGE_BUCKET=${BUCKET_NAME},GOOGLE_GENAI_USE_VERTEXAI=1,DB_USER=app_user,DB_PASSWORD=${DB_PASSWORD},DB_NAME=ediscovery,DB_HOST=/cloudsql/${TARGET_PROJECT_ID}:${TARGET_REGION}:${INSTANCE_NAME},DB_PORT=5432,AGENT_GATEWAY=${AGENT_GATEWAY}" \
     --memory=2Gi \
     --allow-unauthenticated
 
@@ -169,11 +189,8 @@ DB_PASSWORD=${DB_PASSWORD}
 DB_NAME=ediscovery
 DB_HOST=127.0.0.1
 DB_PORT=5433
+AGENT_GATEWAY=${AGENT_GATEWAY}
 
-# Model Armor safety template settings (Phase 1 Governance)
-MODEL_ARMOR_PROJECT_ID=${TARGET_PROJECT_ID}
-MODEL_ARMOR_LOCATION=${TARGET_REGION}
-MODEL_ARMOR_TEMPLATE_ID=ediscovery-safety-policy
 EOF
 echo "✅ Local .env configuration updated."
 

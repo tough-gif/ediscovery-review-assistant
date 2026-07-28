@@ -111,7 +111,7 @@ async def run_scenario(runner: Runner, user_id: str, session_id: str, scenario_n
     return full_response
 
 async def main():
-    app_name = config.agent_engine_id
+    app_name = os.getenv("WORKSPACE_ID") or config.agent_engine_id
     user_id = "attorney_user"
     
     # 1. Initialize services

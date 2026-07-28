@@ -24,7 +24,6 @@ dependencies = [
     "opentelemetry-util-genai<=0.3b0",
     "opentelemetry-exporter-gcp-logging",
     "opentelemetry-resourcedetector-gcp<1.13.0",
-    "google-cloud-modelarmor",
 ]
 
 [build-system]

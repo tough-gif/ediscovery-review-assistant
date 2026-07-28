@@ -57,15 +57,13 @@ GOOGLE_CLOUD_LOCATION=us-central1
 VERTEX_AGENT_ENGINE_ID=your-vertex-reasoning-engine-id
 GOOGLE_CLOUD_STORAGE_BUCKET=your-gcs-vault-bucket-name
 DB_USER=app_user
-DB_PASSWORD=ediscovery_pass_123
+DB_PASSWORD=your_password
 DB_NAME=ediscovery
 DB_HOST=127.0.0.1
 DB_PORT=5433
 
-# Model Armor settings (Optional, safety bypasses if empty)
-MODEL_ARMOR_PROJECT_ID=your-gcp-project-id
-MODEL_ARMOR_LOCATION=us-central1
-MODEL_ARMOR_TEMPLATE_ID=your-model-armor-template-id
+# Agent Gateway Ingress Security binding (Model Armor)
+AGENT_GATEWAY=ediscovery-safety-policy
 ```
 
 ---
@@ -153,9 +151,10 @@ The E-Discovery application implements enterprise-level governance boundaries to
 ### 1. Model Armor Safety Gating
 *   **Prompt Ingress & Egress Filtering**: Incoming queries are scanned for jailbreak attempts, prompt injections, and sensitive PII leaks *before* reaching the Vertex AI LLM. LLM responses are sanitized for sensitive data leaks before rendering.
 *   **Safety Template Setup**: 
-    1.  Create a Model Armor template in the GCP Console under **Security** > **Model Armor** (Location: `us-central1`).
-    2.  Provide the template ID in your `.env` (or during Cloud Run setup).
-    3.  Ensure the Cloud Run service account (`PROJECT_NUMBER-compute@developer.gserviceaccount.com`) is granted the **`Model Armor User`** (`roles/modelarmor.user`) role to call the template API.
+    1.  Create a Model Armor template in the GCP Console under **Security** > **Model Armor** (e.g., named `ediscovery-safety-policy` in `us-central1`).
+    2.  Attach the template to an **Agent Gateway** resource in your project (location: `us-central1`).
+    3.  Provide the gateway name in your `.env` as `AGENT_GATEWAY=ediscovery-safety-policy` before deploying the backend. This binds the Reasoning Engine to the gateway dynamically during deployment.
+    4.  Ensure the target Service Account has the **`Model Armor User`** (`roles/modelarmor.user`) role.
 
 ### 2. User Context & IAP Identity Propagation
 *   **Verified Reviewer Identity**: Instead of hardcoding static credentials, the app extracts the dynamic user email from the HTTP headers (`X-Goog-Authenticated-User-Email`) injected by **Google Cloud Identity-Aware Proxy (IAP)**.
@@ -184,12 +183,13 @@ Once your agent and Streamlit dashboard are online in the cloud, you can run off
 To automate the migration of all backend resources, IAM permissions, database configurations, and Cloud Run frontends to a completely new GCP project, use our unified migration script `deployment/migrate_project.sh`.
 
 ### Option A: Configure `.env` first (Recommended)
-1.  Open your local `.env` configuration file and update the variables to point to the new project coordinates:
+1.  Open your local `.env` configuration file and update the variables to point to the target project coordinates:
     ```env
     GOOGLE_CLOUD_PROJECT=your-target-project-id
     GOOGLE_CLOUD_LOCATION=us-central1
     GOOGLE_CLOUD_STORAGE_BUCKET=your-target-gcs-bucket
     DB_PASSWORD=your-target-db-password
+    AGENT_GATEWAY=ediscovery-safety-policy
     ```
 2.  Execute the migration script without arguments:
     ```bash
@@ -199,10 +199,10 @@ To automate the migration of all backend resources, IAM permissions, database co
 ### Option B: Pass arguments via CLI
 Alternatively, run the script and specify parameters directly:
 ```bash
-./deployment/migrate_project.sh <TARGET_PROJECT_ID> [TARGET_REGION] [DB_PASSWORD]
+./deployment/migrate_project.sh <TARGET_PROJECT_ID> [TARGET_REGION] [DB_PASSWORD] [AGENT_GATEWAY]
 ```
 
-*Note: During execution, the script will pause and output a direct Cloud Console Query Studio URL. You must open that link, log in, and run `CREATE EXTENSION IF NOT EXISTS vector;` to enable pgvector before pressing [Enter] to finish the deployment.*
+*Note: During execution, the script will pause and request two manual tasks: enabling the pgvector extension on the database and creating the Model Armor security template using the provided gcloud command. Follow the terminal prompts and press [Enter] to resume deployment.*
 
 ---
 
