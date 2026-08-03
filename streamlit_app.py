@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import sys
+import subprocess
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -65,6 +66,24 @@ def save_active_workspace(workspace_id: str):
     except Exception as e:
         logging.error(f"Failed to write workspace config: {e}")
 
+def get_active_user_id() -> str:
+    """Resolves the active gcloud authenticated account email, falling back to a default."""
+    try:
+        # Run gcloud command to get active user account email
+        result = subprocess.run(
+            ["gcloud", "config", "get-value", "account"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        email = result.stdout.strip()
+        if email:
+            return email
+    except Exception:
+        pass
+    
+    return "attorney_user"  # Safe default fallback
+
 def get_user_email() -> str:
     """Extracts the authenticated user email from IAP headers, failing back to 'attorney_user' locally."""
     try:
@@ -76,7 +95,7 @@ def get_user_email() -> str:
             return raw_email
     except Exception as e:
         logger.debug(f"IAP Context header parsing bypassed or unavailable: {e}")
-    return "attorney_user"
+    return get_active_user_id()
 
 # We need to make sure our package is in the path if running streamlit directly
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))

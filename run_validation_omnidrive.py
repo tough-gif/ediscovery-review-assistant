@@ -6,6 +6,25 @@ import os
 import sys
 from dotenv import load_dotenv
 load_dotenv(dotenv_path=os.path.join(os.getcwd(), ".env"), override=True)
+import subprocess
+
+def get_active_user_id() -> str:
+    """Resolves the active gcloud authenticated account email, falling back to a default."""
+    try:
+        # Run gcloud command to get active user account email
+        result = subprocess.run(
+            ["gcloud", "config", "get-value", "account"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        email = result.stdout.strip()
+        if email:
+            return email
+    except Exception:
+        pass
+    
+    return "attorney_user"  # Safe default fallback
 
 from google.genai import types
 from google.adk import Runner
@@ -112,7 +131,7 @@ async def run_scenario(runner: Runner, user_id: str, session_id: str, scenario_n
 
 async def main():
     app_name = os.getenv("WORKSPACE_ID") or config.agent_engine_id
-    user_id = "attorney_user"
+    user_id = get_active_user_id()
     
     # 1. Initialize services
     db_config = {

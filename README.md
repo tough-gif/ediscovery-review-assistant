@@ -64,6 +64,9 @@ DB_PORT=5433
 
 # Agent Gateway Ingress Security binding (Model Armor)
 AGENT_GATEWAY=ediscovery-safety-policy
+
+# Force SDK client to route queries through Vertex AI endpoints
+GOOGLE_GENAI_USE_VERTEXAI=1
 ```
 
 ---
@@ -98,8 +101,21 @@ This script will:
    - **Competitor Recruitment**: Recovers details of the Ventura Motors VP offer and proprietary sensor spacing benchmarks.
    - **Privilege Auditing**: Verifies that emails involving legal counsel (Sarah Jenkins and Marcus Vance) are flagged as attorney-client privileged/work product.
 
+### Resetting the Environment (Data Wiping)
+
+If you need to perform a clean test run (e.g., to test the document ingestion pipeline animation in the Streamlit UI or switch between case studies), you can use the backend clean-up script to wipe database tables and GCS vault buckets:
+
+```bash
+uv run python3 deployment/clear_backend.py
+```
+
+This utility script will:
+1. **Truncate PostgreSQL**: Empties the `document_chunks` table completely.
+2. **Purge GCS Vault**: Deletes all uploaded raw files, ingestion manifests, and audit chat history logs inside the GCS bucket.
+3. **Preserve Agent Bundles**: Retains the `agent_engine/` prefix directories so that the active registered Cloud Reasoning Engine container continues serving requests without interruption.
 
 ---
+
 
 ## Deployment to Vertex AI (Backend)
 

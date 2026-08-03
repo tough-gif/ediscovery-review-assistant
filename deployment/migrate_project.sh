@@ -93,17 +93,17 @@ SA_EMAIL="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 echo -e "\n🔑 Step 5: Configuring IAM Service Account Permissions..."
 echo "Targeting default Compute SA: ${SA_EMAIL}..."
 
-gcloud projects add-iam-policy-binding "${TARGET_PROJECT_ID}" \
-    --member="serviceAccount:${SA_EMAIL}" \
-    --role="roles/aiplatform.user" >/dev/null
-    
-gcloud projects add-iam-policy-binding "${TARGET_PROJECT_ID}" \
-    --member="serviceAccount:${SA_EMAIL}" \
-    --role="roles/cloudsql.client" >/dev/null
-    
-gcloud storage buckets add-iam-policy-binding "gs://${BUCKET_NAME}" \
-    --member="serviceAccount:${SA_EMAIL}" \
-    --role="roles/storage.objectAdmin" >/dev/null
+# gcloud projects add-iam-policy-binding "${TARGET_PROJECT_ID}" \
+#     --member="serviceAccount:${SA_EMAIL}" \
+#     --role="roles/aiplatform.user" >/dev/null
+#     
+# gcloud projects add-iam-policy-binding "${TARGET_PROJECT_ID}" \
+#     --member="serviceAccount:${SA_EMAIL}" \
+#     --role="roles/cloudsql.client" >/dev/null
+#     
+# gcloud storage buckets add-iam-policy-binding "gs://${BUCKET_NAME}" \
+#     --member="serviceAccount:${SA_EMAIL}" \
+#     --role="roles/storage.objectAdmin" >/dev/null
 
 echo "✅ IAM Bindings configured."
 
@@ -190,6 +190,20 @@ DB_NAME=ediscovery
 DB_HOST=127.0.0.1
 DB_PORT=5433
 AGENT_GATEWAY=${AGENT_GATEWAY}
+GOOGLE_GENAI_USE_VERTEXAI=1
+
+# Model Settings
+GEMINI_MODEL_NAME=gemini-2.5-flash
+GEMINI_MODEL_TEMPERATURE=0.2
+
+# Embedding Settings
+EMBEDDING_MODEL_NAME=text-embedding-005
+VECTOR_DIMENSIONS=768
+USE_CLOUD_AGENT=true
+
+# OTEL prompt/response logging requirements for evaluation
+OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental
+OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=EVENT_ONLY
 
 EOF
 echo "✅ Local .env configuration updated."

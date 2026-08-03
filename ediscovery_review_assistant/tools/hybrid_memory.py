@@ -69,12 +69,16 @@ class HybridMemoryBankService(VertexAiMemoryBankService):
         custom_metadata: Mapping[str, object] | None = None,
     ) -> None:
         """Writes memories to the cloud Vector store and the Cloud SQL PostgreSQL database."""
-        # 1. Cloud Vector ingestion
+        # Ensure user_id is saved in custom metadata for audit log trails
+        meta_global = dict(custom_metadata or {})
+        meta_global["user_id"] = user_id
+
+        # 1. Cloud Vector ingestion (scoping to a shared user to allow team collaboration)
         await super().add_memory(
             app_name=app_name,
-            user_id=user_id,
+            user_id="shared_workspace_user",
             memories=memories,
-            custom_metadata=custom_metadata
+            custom_metadata=meta_global
         )
 
         # 2. Cloud SQL PostgreSQL indexing
@@ -84,7 +88,8 @@ class HybridMemoryBankService(VertexAiMemoryBankService):
             async with conn.transaction():
                 for entry in memories:
                     fact = entry.content.parts[0].text
-                    meta = entry.custom_metadata or {}
+                    meta = dict(entry.custom_metadata or {})
+                    meta["user_id"] = user_id
 
                     # Compute unique chunk key
                     file_name = meta.get("source_file_name", "unknown_file")
@@ -133,7 +138,7 @@ class HybridMemoryBankService(VertexAiMemoryBankService):
                 name='reasoningEngines/' + self._agent_engine_id,
                 scope={
                     'app_name': app_name,
-                    'user_id': user_id,
+                    'user_id': 'shared_workspace_user',
                 },
                 similarity_search_params={
                     'search_query': query,
