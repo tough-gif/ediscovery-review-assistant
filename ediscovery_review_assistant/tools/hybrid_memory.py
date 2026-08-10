@@ -22,6 +22,36 @@ class HybridMemoryBankService(VertexAiMemoryBankService):
         self.db_config = db_config
         self.schema_initialized = False
 
+    async def _get_connection(self) -> asyncpg.Connection:
+        """Returns a PostgreSQL connection, using the Cloud SQL Connector if configured."""
+        if not self.db_config:
+            raise RuntimeError("Database configuration is not set.")
+            
+        instance_name = self.db_config.get("instance_connection_name")
+        if instance_name:
+            import asyncio
+            from google.cloud.sql.connector import Connector
+            loop = asyncio.get_running_loop()
+            
+            global _connectors_by_loop
+            if '_connectors_by_loop' not in globals():
+                _connectors_by_loop = {}
+                
+            if loop not in _connectors_by_loop:
+                _connectors_by_loop[loop] = Connector(loop=loop)
+                
+            connector = _connectors_by_loop[loop]
+            conn = await connector.connect_async(
+                instance_name,
+                "asyncpg",
+                user=self.db_config["user"],
+                password=self.db_config["password"],
+                db=self.db_config["database"]
+            )
+            return conn
+        else:
+            return await asyncpg.connect(**self.db_config)
+
     async def _ensure_schema(self) -> None:
         """Ensures database tables are initialized once per instance runtime."""
         if self.schema_initialized or not self.db_config:
@@ -29,7 +59,7 @@ class HybridMemoryBankService(VertexAiMemoryBankService):
             
         logger.info("Verifying Cloud SQL PostgreSQL database schema...")
         try:
-            conn = await asyncpg.connect(**self.db_config)
+            conn = await self._get_connection()
         except Exception as e:
             logger.warning(f"Failed to connect to PostgreSQL during schema verify, disabling keyword FTS schema setup: {e}")
             return
@@ -83,7 +113,7 @@ class HybridMemoryBankService(VertexAiMemoryBankService):
 
         # 2. Cloud SQL PostgreSQL indexing
         await self._ensure_schema()
-        conn = await asyncpg.connect(**self.db_config)
+        conn = await self._get_connection()
         try:
             async with conn.transaction():
                 for entry in memories:
@@ -142,6 +172,7 @@ class HybridMemoryBankService(VertexAiMemoryBankService):
                 },
                 similarity_search_params={
                     'search_query': query,
+                    'top_k': 15,
                 },
             )
         )
@@ -160,6 +191,9 @@ class HybridMemoryBankService(VertexAiMemoryBankService):
                     # Extract the custom metadata stored in the Cloud
                     gcp_metadata = getattr(memory, 'metadata', None)
                     custom_metadata = self._parse_gcp_metadata(gcp_meta=gcp_metadata)
+                    
+                    source_file = custom_metadata.get("source_file_name", "unknown")
+                    logger.info(f"DEBUG: Retrieved Cloud Semantic Match: {source_file}")
 
                     update_time = memory.update_time
                     memory_events.append(
@@ -221,7 +255,7 @@ class HybridMemoryBankService(VertexAiMemoryBankService):
             
         try:
             await self._ensure_schema()
-            conn = await asyncpg.connect(**self.db_config)
+            conn = await self._get_connection()
         except Exception as e:
             logger.warning(f"PostgreSQL database connection failed in keyword search: {e}")
             return memories

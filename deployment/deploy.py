@@ -88,7 +88,7 @@ def setup_staging_bucket(
 
 
 def make_memory_service():
-    """Builder to instantiate Custom Hybrid Memory Service in Vector-Only mode in cloud container."""
+    """Builder to instantiate Custom Hybrid Memory Service inside Cloud Reasoning Engine container."""
     import os
     from ediscovery_review_assistant.tools.hybrid_memory import HybridMemoryBankService
     
@@ -96,8 +96,23 @@ def make_memory_service():
     location = os.getenv("AIP_LOCATION", "us-central1")
     engine_id = os.getenv("WORKSPACE_ID") or os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID") or os.getenv("VERTEX_AGENT_ENGINE_ID")
     
+    db_user = os.getenv("DB_USER")
+    db_password = os.getenv("DB_PASSWORD")
+    db_name = os.getenv("DB_NAME")
+    instance_name = os.getenv("DB_INSTANCE_CONNECTION_NAME")
+    
+    if db_user and db_password and db_name and instance_name:
+        db_config = {
+            "instance_connection_name": instance_name,
+            "user": db_user,
+            "password": db_password,
+            "database": db_name
+        }
+    else:
+        db_config = None
+        
     return HybridMemoryBankService(
-        db_config=None,
+        db_config=db_config,
         project=project,
         location=location,
         agent_engine_id=engine_id
@@ -197,6 +212,10 @@ def collect_env_vars() -> dict[str, str]:
         "GOOGLE_CLOUD_STORAGE_BUCKET",
         "OTEL_SEMCONV_STABILITY_OPT_IN",
         "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT",
+        "DB_USER",
+        "DB_PASSWORD",
+        "DB_NAME",
+        "DB_INSTANCE_CONNECTION_NAME",
     ]
 
     skipped_vars: list[str] = []
